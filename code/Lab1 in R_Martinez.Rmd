@@ -1,0 +1,190 @@
+---
+title: "DEM 5093 7093 Lab 1 using  R - Basic Map making"
+author: "Cristina Martinez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+always_allow_html: yes
+---
+
+
+```{r, message=FALSE, eval=TRUE, include = FALSE}
+library(tidycensus)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(classInt)
+```
+
+### Search for variables by keywords in the label 
+```{r, eval = FALSE, echo = FALSE, include = FALSE}
+v15_Profile%>%
+  filter(grepl(pattern = "POVERTY", x = label))%>%
+  select(name, label)
+```
+
+\newpage
+## Extract from ACS summary file data
+
+```{r, results='hide'}
+sa_acs<-get_acs(geography = "tract",
+                state= "TX",
+                county = "Bexar",
+                year = 2019,
+                variables=c(medinc = "DP03_0062E", medinc.moe = "DP03_0062M"),
+                geometry = T,
+                output = "wide")
+
+```
+
+Here, I create some other variables that we may need later
+```{r}
+# create a county FIPS code - 5 digit and filter missing cases
+sa_acs2 <- sa_acs %>%
+  mutate(county = substr(GEOID, 1, 5)) %>%
+  st_transform(crs = 2919)%>%
+  na.omit()
+
+```
+
+## Write data out to shapefile
+You may need to create or modify some data in R and then use it in the desktop GIS (QGIS), we can write any data from R into a variety of data formats using the  `sf::st_write()` function.
+
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE, include=FALSE}
+#change the directory for your computer
+sf::st_write(sa_acs2,
+             dsn="../data/sa_tr_dp03",
+             layer="sa_tr_dp03",
+             driver="GPKG") ## Save as geopackage format - QGIS likes this
+
+```
+
+\newpage
+
+## Some basic mapping of variables
+Here I generate a quantile break for % black in census tracts and compare it to a Jenks break. *Note* in ggplot, the Jenks break is harder to do
+```{r, message=FALSE, fig.width=12, fig.height=8}
+
+library(patchwork)
+library(ggsn)
+library(XploreR)
+source("https://raw.githubusercontent.com/coreysparks/Rcode/master/mutate_map_funs.R")
+
+medinc_map<-sa_acs2 %>%
+  mutate_map_brks(medinc, n=6, style="quantile") %>%
+  mutate_map_brks(medinc, n=6, style="jenks")
+
+
+
+p1<-ggplot(medinc_map, aes(fill = medinc_qbrks)) + 
+  geom_sf(color="grey50") + 
+  ggtitle("Median Household Income", 
+          subtitle = "Bexar County Texas, 2019 - Quantile Breaks")+
+    scale_fill_brewer(palette = "Blues") + 
+  scale_color_brewer(palette = "Blues")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank())+
+  north(medinc_map)+
+  scalebar(medinc_map, location="bottomleft",
+           dist=5, transform = T,
+           dist_unit = "km",
+           model="WGS84",
+           st.size =2 )
+p1
+
+
+
+p2<-ggplot(medinc_map, aes(fill = medinc_jbrks)) + 
+  geom_sf(color="grey50") + 
+  ggtitle("Median Household Income", 
+          subtitle = "Bexar County Texas, 2019 - Jenks Breaks")+
+  scale_fill_brewer(palette = "Blues") + 
+  scale_color_brewer(palette = "Blues")+
+    theme(axis.text.x = element_blank(),
+          axis.text.y = element_blank())+
+  north(medinc_map)+
+  scalebar(medinc_map, 
+           location="bottomleft",
+           dist=5,
+           transform = T,
+           dist_unit = "km",
+           model="WGS84",
+           st.size =2)
+p2
+  
+p1+ p2
+
+```
+
+You can save the image from above to your computer by using `ggsave()`
+```{r, eval=FALSE}
+ggsave(filename="../images/lab1map1.png",
+       dpi = "print")
+
+```
+
+### Slightly easier way using `tmap`
+
+The `tmap` package is an attractive alternative to using `ggplot()` when making maps, and makes basic cartographic principles easier.
+
+*Note* `style="fisher"` is equivalent to `style="jenks"` and scales better to larger data.
+
+```{r}
+#library(tmap)
+#library(tmaptools)
+
+tm_shape(sa_acs2)+
+  tm_polygons("medinc",
+              title="Income",
+              palette="Blues",
+              style="quantile", 
+              n=5, 
+              legend.hist=T)+
+  tm_format("World",
+            title="San Antonio Median Household Income - Quantile Breaks",
+            legend.outside=T)+
+  tm_scale_bar()+
+  tm_compass()
+
+tm_shape(sa_acs2)+
+  tm_polygons("medinc",
+              title="Income",
+              palette="Blues",
+              style="fisher",
+              n=5,
+              legend.hist=T )+
+  tm_format("World",
+            title="San Antonio Median Household Income - Jenks Breaks",
+            legend.outside=T)+
+  tm_scale_bar()+
+  tm_compass()
+```
+
+
+## Interactive map with mapview
+
+```{r}
+library(mapview)
+library(RColorBrewer)
+
+medinc_map$medinc_jbrks<-relevel(medinc_map$medinc_jbrks,ref = "0-10463" )
+
+medinc_map2 <- medinc_map %>%
+  select(Name = NAME, `Median Income` = medinc, MOE = medinc.moe, `Jenk Breaks` = medinc_jbrks)
+
+#pal <- colorRampPalette(brewer.pal(7, "Blues")) #set colors
+
+x<-mapview(medinc_map2,
+        zcol="Jenk Breaks",
+        legend=T,
+        map.types="OpenStreetMap",
+        layer.name="Income")
+
+x
+
+mapshot(x, file = "C:/Users/chrys/Documents/UTSA/7093 GIS/map.jpeg", remove_controls = c("zoomControl", "layersControl"))
+
+```
+
+
+
