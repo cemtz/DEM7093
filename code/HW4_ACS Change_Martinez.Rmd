@@ -1,0 +1,282 @@
+---
+title: "DEM 7093 Homework 4 - Mapping Using the American Community Survey"
+author: "Cristina Martinez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+   toc: yes
+   toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+### Load Libraries
+```{r}
+options(Ncores = 12)
+library(tidycensus)
+library(tidyverse)
+library(sf)
+library(tmap)
+```
+
+```{r}
+v10_Profile <- load_variables(2010, "acs5/profile", cache = TRUE) #demographic profile tables
+v19_Profile <- load_variables(2019, "acs5/profile", cache = TRUE) #demographic profile tables
+
+#Search for variables by using grep()
+
+v10_Profile[grep(x = v10_Profile$label, "VACANT", ignore.case = TRUE), c("name", "label")] #DP04_0003P
+
+v19_Profile[grep(x = v19_Profile$label, "VACANT", ignore.case = TRUE), c("name", "label")] #DP04_0003P
+```
+
+### Extract from ACS summary file data profile variables from 2010 and 2019 for Harris County, TX Census Tracts
+```{r, results='hide'}
+# pull 2010 ACS data for Harris County
+vac10<-get_acs(geography = "tract",
+                state = "TX",
+                county = "Harris County",
+                year = 2010, 
+                variables = "DP04_0003P",
+                geometry = T,
+                output = "wide")
+
+
+#rename variables and filter missing cases
+vac10 <- vac10 %>% 
+  mutate(pvac = DP04_0003PE, 
+         pvac_er = DP04_0003PM/1.645,
+         pvac_cv = 100*(pvac_er/pvac)) %>%
+  filter(complete.cases(pvac), is.finite(pvac_cv)==T) %>%
+  select(GEOID, pvac, pvac_er, pvac_cv)
+
+head(vac10)
+```
+
+```{r}
+## Alternative break strategies
+#shiny tool to see what palettes you can use
+#tmaptools::palette_explorer()
+tm_shape(vac10)+
+  tm_polygons(c("pvac"), 
+              title=c("% Housing Units Vacant"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
+  tm_scale_bar()+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant - Quantile Breaks", 
+            title.size =1.5, 
+            legend.frame = TRUE, 
+            title.position = c('right', 'top'))+
+  #tm_compass adds north arrow
+  tm_compass()+
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+
+tm_shape(vac10)+
+  tm_polygons(c("pvac"), 
+              title=c("% Housing Units Vacant"), 
+              palette="Blues", 
+              style="jenks", 
+              n=5)+
+  tm_scale_bar()+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant - Jenks Breaks", 
+            title.size =1.5, 
+            legend.frame = TRUE, 
+            title.position = c('right', 'top'))+
+  tm_compass() +
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+
+tm_shape(vac10)+
+  tm_polygons(c("pvac"), 
+              title=c("% Housing Units Vacant"), 
+              palette="Blues", style="pretty", n=5)+
+  tm_scale_bar()+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant - Pretty Breaks", 
+            title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_compass()+
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+```
+
+```{r, eval = FALSE, include = FALSE}
+## Mapping of errors in estimates
+p1<-tm_shape(vac10)+
+  tm_polygons(c("pvac"), 
+              title=c("% Housing Units Vacant"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
+  tm_scale_bar()+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_compass()+
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+
+p2<-tm_shape(vac10)+
+  tm_polygons(c("pvac_cv"), 
+              title=c("CV Vacant Housing Units"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
+  tm_layout(title="Houston Percent Vacant Housing Units CV", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_scale_bar()+
+  tm_compass()+
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+
+
+tmap_arrange(p1, p2)
+```
+
+```{r, eval = FALSE, include = FALSE}
+plot(vac10$pvac, vac10$pvac_cv, main = "Error in Estimates vs Estimate Size")
+```
+
+```{r, results = 'hide'}
+# get the 2019 estimates
+vac19<-get_acs(geography = "tract",
+                state = "TX",
+                county = "Harris County",
+                year = 2019,
+                variables = "DP04_0003P",
+                geometry = T,
+                output = "wide")
+
+
+#rename variables and filter missing cases
+vac19<- vac19%>% 
+  mutate(pvac19 = DP04_0003PE,
+         pvac19_er = DP04_0003PM/1.645, 
+         pvac19_cv = 100*(pvac19_er/pvac19)) %>%
+  filter(complete.cases(pvac19), is.finite(pvac19_cv)==T)%>%
+  select(GEOID, pvac19, pvac19_er, pvac19_cv)
+
+head(vac19)
+```
+
+```{r}
+#Merge 2010 and 2019 data
+st_geometry(vac19) <- NULL
+mdat <- left_join(vac10, vac19, by = c("GEOID"="GEOID"))
+
+head(mdat)
+```
+
+### Compare poverty rates over time
+```{r}
+#Function created by C Sparks to get differences in estimates between two years and test for significant change
+acstest<-function(names,geoid, est1, err1, est2, err2, alpha, yr1, yr2, span){
+        
+  se1<-err1/qnorm(.90)
+  se2<-err2/qnorm(.90)
+  yrs1<-seq(yr1, to=yr1-span)
+  yrs2<-seq(yr2, to=yr2-span)
+
+  C<-mean(yrs2%in%yrs1)
+  diff <- (est1-est2)
+  test <- (est1-est2) / (sqrt(1-C)*sqrt((se1^2+se2^2))) #this is a t-test
+  crit <- qnorm(1-alpha/2)
+  pval <- 1-pnorm(abs(test)) #2*pnorm(abs(test),lower.tail=F)
+  result <- NULL
+  result[pval > alpha] <- "insignificant change"
+  result[pval < alpha & test < 0] <- "significant increase"
+  result[pval < alpha & test > 0] <- "significant decrease" 
+  
+  data.frame(name=names,geoid=geoid, est1=est1, est2=est2, se1=se1, se2=se2,difference=diff, test=test, result=result, pval=pval)
+}
+```
+
+Run the function above to get comparison of percent housing units vacant and test for significant changes
+```{r}
+diff1019 <- acstest(names = mdat$GEOID, 
+                    geoid = mdat$GEOID, 
+                    est1 = mdat$pvac, 
+                    est2 = mdat$pvac19, 
+                    err1 = mdat$pvac_er, 
+                    err2 = mdat$pvac19_er,
+                    alpha = .1, 
+                    yr1 = 2010, yr2=2019, 
+                    span = 5)
+
+head(diff1019)
+table(diff1019$result)
+```
+
+### Make a map layout
+```{r, fig.height=10, fig.width=12}
+
+acs_merge<-left_join(mdat, diff1019, by=c("GEOID"="geoid"))
+
+tmap_mode("plot")
+
+p1<-tm_shape(acs_merge)+
+  tm_polygons(c("pvac"), title=c("% Housing Units Vacant  2010"), palette="Blues", style="quantile", n=5)+
+  tm_scale_bar()+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant 2010", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_compass() +
+  tm_format("World",
+            legend.position =  c("left", "bottom"),
+            legend.frame = FALSE,
+            legend.title.size = 1.3,
+            legend.text.size = 1,
+            main.title.position =c("center"))
+
+p2<-tm_shape(acs_merge)+
+  tm_polygons(c("pvac19"), title=c("% Housing Units Vacant 2019"), palette="Blues", style="quantile", n=5)+
+  tm_layout(title="Houston Estimated Percent Housing Units Vacant 2019", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_scale_bar()+
+  tm_compass() +
+  tm_format("World",
+            legend.position =  c("left", "bottom"),
+            legend.frame = FALSE,
+            legend.title.size = 1.3,
+            legend.text.size = 1,
+            main.title.position =c("center"))
+
+
+p3  <- tm_shape(acs_merge)+
+  tm_polygons(c("result"), title=c("Change from 2010 to 2019"), palette = "Set2")+
+  tm_layout(title="Houston Vacant Housing Units Estimate Changes", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+  tm_scale_bar()+
+  tm_compass() +
+  tm_format("World",
+            legend.position =  c("left", "bottom"),
+            legend.frame = FALSE,
+            legend.title.size = 1.3,
+            legend.text.size = 1,
+            main.title.position =c("center"))
+
+  
+
+tmap_arrange(p1, p2, p3)
+```
+
+```{r}
+### Make and interactive map
+tmap_mode("view")
+
+#osmtile <- tmaptools::read_osm(pov10, mergeTiles = T)
+
+#tm_shape(osmtile)+
+ # tm_rgb()+
+tm_shape(acs_merge)+
+  tm_polygons("result",
+              alpha = .7,
+              title=c("Change from 2010 to 2019"),
+              palette = "Set2")+
+  #tm_format("World", title="San Antonio Poverty Rate CV", legend.outside=T)+
+  tm_layout(title="San Antonio Poverty Rate Estimate Changes",
+            title.size =1.5)+
+  tm_scale_bar()
+```
+

@@ -12,7 +12,7 @@ always_allow_html: yes
 This is the lab Sparks went through in class on 2/9/2022
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 This example will use R to download American Community Survey summary file tables using the `tidycensus` package. The goal of this example is to illustrate how to download data from the Census API using R, how to create basic descriptive maps of attributes and how to construct a change map between two time periods. 
@@ -67,7 +67,8 @@ pov10 <- pov10%>% #rename vac10
   mutate(ppov = DP03_0119PE, #DP04_0003PE / rename pvac
          ppov_er = DP03_0119PM/1.645, ##DP04_0003PM
          ppov_cv =100* (ppov_er/ppov)) %>%
-  filter(complete.cases(ppov), is.finite(ppov_cv)==T)
+  filter(complete.cases(ppov), is.finite(ppov_cv)==T) %>%
+  select(GEOID, ppov, ppov_er, ppov_cv)
  #is.finite deals with infinite numbers
 
 head(pov10)
@@ -81,18 +82,46 @@ fisher works better when you have A LOT of data otherwise jenks and fisher are s
 #shiny tool to see what palettes you can use
 #tmaptools::palette_explorer()
 tm_shape(pov10)+
-  tm_polygons(c("ppov"), title=c("% in Poverty"), palette="Blues", style="quantile", n=5)+
+  tm_polygons(c("ppov"), 
+              title=c("% in Poverty"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
   tm_scale_bar()+
   tm_layout(title="San Antonio Poverty Rate Estimates - Quantile Breaks", 
-            title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
+            title.size =1.5, 
+            legend.frame = TRUE, 
+            title.position = c('right', 'top'))+
   #tm_compass adds north arrow
   tm_compass()+
   tm_format("World",
              legend.position = c("left", "bottom"),
              main.title.position = c("center"))
+```
 
+```{r}
 tm_shape(pov10)+
-  tm_polygons(c("ppov"), title=c("% in Poverty"), palette="Blues", style="pretty", n=5)+
+  tm_polygons(c("ppov"), 
+              title=c("% in Poverty"), 
+              palette="Blues", 
+              style="jenks", 
+              n=5)+
+  tm_scale_bar()+
+  tm_layout(title="San Antonio Poverty Rate Estimates - Jenks Breaks", 
+            title.size =1.5, 
+            legend.frame = TRUE, 
+            title.position = c('right', 'top'))+
+  tm_compass() +
+  tm_format("World",
+             legend.position = c("left", "bottom"),
+             main.title.position = c("center"))
+```
+
+```{r}
+tm_shape(pov10)+
+  tm_polygons(c("ppov"), 
+              title=c("% in Poverty"), 
+              palette="Blues", style="pretty", n=5)+
   tm_scale_bar()+
   tm_layout(title="San Antonio Poverty Rate Estimates - Pretty Breaks", 
             title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
@@ -100,19 +129,7 @@ tm_shape(pov10)+
   tm_format("World",
              legend.position = c("left", "bottom"),
              main.title.position = c("center"))
-
-tm_shape(pov10)+
-  tm_polygons(c("ppov"), title=c("% in Poverty"), palette="Blues", style="jenks", n=5)+
-  tm_scale_bar()+
-  tm_layout(title="San Antonio Poverty Rate Estimates - Jenks Breaks", 
-            title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
-  tm_compass() +
-  tm_format("World",
-             legend.position = c("left", "bottom"),
-             main.title.position = c("center"))
-
 ```
-
 
 ## Mapping of errors in estimates
 
@@ -124,10 +141,15 @@ $$CV =\frac {\sigma }{\mu}$$
 
 and is a measure of the variability in the estimate, relative to the estimate itself. If the CV is greater than 100, the estimate is very imprecise. The lower the value, the more precise the estimate. This is very important when using small area estimates from the ACS. 
 
-```{r}
+When presenting data from theACS you should always examine the coefficients of variation, as the ACS is based off a survey, and the estimates, especially for small or rare groups can be very imprecise.
 
+```{r}
 p1<-tm_shape(pov10)+
-  tm_polygons(c("ppov"), title=c("% in Poverty"), palette="Blues", style="quantile", n=5)+
+  tm_polygons(c("ppov"), 
+              title=c("% in Poverty"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
   tm_scale_bar()+
   tm_layout(title="San Antonio Poverty Rate Estimates", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
   tm_compass()+
@@ -136,7 +158,11 @@ p1<-tm_shape(pov10)+
              main.title.position = c("center"))
 
 p2<-tm_shape(pov10)+
-  tm_polygons(c("ppov_cv"), title=c("CV Poverty"), palette="Blues", style="quantile", n=5)+
+  tm_polygons(c("ppov_cv"), 
+              title=c("CV Poverty"), 
+              palette="Blues", 
+              style="quantile", 
+              n=5)+
   tm_layout(title="San Antonio Poverty Rate CV", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
   tm_scale_bar()+
   tm_compass()+
@@ -146,11 +172,10 @@ p2<-tm_shape(pov10)+
 
 
 tmap_arrange(p1, p2)
-
 ```
 
 ```{r}
-plot(pov10$ppov, pov10$ppov_cv)
+plot(pov10$ppov, pov10$ppov_cv, main = "Error in Estimates vs Estimate Size")
 ```
 
 
@@ -183,7 +208,8 @@ pov19<- pov19%>% #rename vac19
   mutate(ppov19 = DP03_0119PE, #DP04_0003PE
          ppov19_er = DP03_0119PM/1.645, ##DP04_0003Pm
          ppov19_cv =100* (ppov19_er/ppov19)) %>%
-  filter(complete.cases(ppov19), is.finite(ppov19_cv)==T)
+  filter(complete.cases(ppov19), is.finite(ppov19_cv)==T)%>%
+  select(GEOID, ppov19, ppov19_er, ppov19_cv)
 
 head(pov19)
 
@@ -197,8 +223,8 @@ head(pov19)
 
 #can also use folowing code to join
 #drop geometry of pov19
-st_geometry(pov19) <- NULL #usuallys drops geometry of right df, dplyr is usually faster, but only one df can have geometry
-mdat2 <- left_join(pov10, pov19, by = c("GEOID"="GEOID"))
+st_geometry(pov19) <- NULL #usually drops geometry of right df, dplyr is usually faster, but only one df can have geometry
+mdat <- left_join(pov10, pov19, by = c("GEOID"="GEOID"))
 
 head(mdat)
 ```
@@ -208,7 +234,7 @@ Here I create a function that implements the [testing  procedure](https://www.ps
 
 ```{r}
 acstest<-function(names,geoid, est1, err1, est2, err2, alpha, yr1, yr2, span){
-  
+        
   se1<-err1/qnorm(.90)
   se2<-err2/qnorm(.90)
   yrs1<-seq(yr1, to=yr1-span)
@@ -218,7 +244,7 @@ acstest<-function(names,geoid, est1, err1, est2, err2, alpha, yr1, yr2, span){
   diff <- (est1-est2)
   test <- (est1-est2) / (sqrt(1-C)*sqrt((se1^2+se2^2))) #this is a t-test
   crit <- qnorm(1-alpha/2)
-  pval <- 2*pnorm(abs(test),lower.tail=F)
+  pval <- 1-pnorm(abs(test)) #2*pnorm(abs(test),lower.tail=F)
   result <- NULL
   result[pval > alpha] <- "insignificant change"
   result[pval < alpha & test < 0] <- "significant increase"
@@ -228,10 +254,34 @@ acstest<-function(names,geoid, est1, err1, est2, err2, alpha, yr1, yr2, span){
 }
 ```
 
+A very similar funcion `significance()` from the `tidycensus` package does a similar thing, but with less output
+```{r}
+#tidycensus
+significance(est1 = mdat$ppov,
+             est2 = mdat$ppov19, 
+             moe1 = mdat$ppov_er, 
+             moe2 = mdat$ppov19_er,
+             clevel = .9)
+
+#attach it to mdat dataframe
+mdat$signif<- significance(est1=mdat$ppov,
+                           est2=mdat$ppov19,
+                           moe1=mdat$ppov_er,
+                           moe2 = mdat$ppov19_er,
+                           clevel = .9)
+```
 
 Here I use the function I just made to do the comparisons
 ```{r}
-  diff1019<-acstest(names = mdat$NAME.x, geoid = mdat$GEOID, est1 = mdat$ppov, est2 = mdat$ppov19, err1 = mdat$ppov_er, err2=mdat$ppov19_er,alpha = .1, yr1 = 2010, yr2=2019, span = 5)
+diff1019 <- acstest(names = mdat$GEOID, 
+                    geoid = mdat$GEOID, 
+                    est1 = mdat$ppov, 
+                    est2 = mdat$ppov19, 
+                    err1 = mdat$ppov_er, 
+                    err2 = mdat$ppov19_er,
+                    alpha = .1, 
+                    yr1 = 2010, yr2=2019, 
+                    span = 5)
 
 head(diff1019)
 table(diff1019$result)
@@ -239,14 +289,7 @@ table(diff1019$result)
 
 ```
 
-```{r}
-#tidycensus
-significance(est1 = ,
-             est2 = , 
-             moe1 = , 
-             moe2 = ,
-             clevel = .9)
-```
+
 
 ### Make a map layout
 
@@ -254,24 +297,28 @@ significance(est1 = ,
 acs_merge<-left_join(mdat, diff1019, by=c("GEOID"="geoid"))
 
 tmap_mode("plot")
+
 p1<-tm_shape(acs_merge)+
   tm_polygons(c("ppov"), title=c("% in Poverty  2010"), palette="Blues", style="quantile", n=5)+
-  #tm_format("World", legend.outside=T, title.size =4)+
   tm_scale_bar()+
   tm_layout(title="San Antonio Poverty Rate Estimates 2010", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
-  tm_compass()
+  tm_compass() +
+  tm_format("World",
+            legend.position =  c("left", "bottom"),
+            main.title.position =c("center"))
 
 p2<-tm_shape(acs_merge)+
   tm_polygons(c("ppov19"), title=c("% in Poverty 2019"), palette="Blues", style="quantile", n=5)+
-  #tm_format("World", title="San Antonio Poverty Rate CV", legend.outside=T)+
   tm_layout(title="San Antonio Poverty Rate Estimate 2019", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
   tm_scale_bar()+
-  tm_compass()
+  tm_compass() +
+  tm_format("World",
+            legend.position =  c("left", "bottom"),
+            main.title.position =c("center"))
 
 
 p3  <- tm_shape(acs_merge)+
-  tm_polygons(c("result"), title=c("Changes"), palette = "Dark2")+
-  #tm_format("World", title="San Antonio Poverty Rate CV", legend.outside=T)+
+  tm_polygons(c("result"), title=c("Changes"), palette = "Set2")+ #"Dark2")+
   tm_layout(title="San Antonio Poverty Rate Estimate Changes", title.size =1.5, legend.frame = TRUE, title.position = c('right', 'top'))+
   tm_scale_bar()+
   tm_compass()
@@ -283,6 +330,22 @@ tmap_arrange(p1, p2, p3)
 ```
  ### Make and interactive map
 ```{r}
-tmap(view)
+tmap_mode("view")
 ```
  
+```{r}
+#osmtile <- tmaptools::read_osm(pov10, mergeTiles = T)
+
+#tm_shape(osmtile)+
+ # tm_rgb()+
+tm_shape(acs_merge)+
+  tm_polygons("result",
+              alpha = .7,
+              title=c("Changes"),
+              palette = "Set2")+
+  #tm_format("World", title="San Antonio Poverty Rate CV", legend.outside=T)+
+  tm_layout(title="San Antonio Poverty Rate Estimate Changes",
+            title.size =1.5)+
+  tm_scale_bar()
+```
+
