@@ -1,11 +1,16 @@
 ---
-title: "DEM 5093 7093 Lab 1 using  R - Basic Map making"
+title: "DEM 7093 Lab 1 using  R - Basic Map making"
 author: "Cristina Martinez"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 always_allow_html: yes
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, include = FALSE)
+```
 
 ```{r, message=FALSE, eval=TRUE, include = FALSE}
 library(tidycensus)
@@ -15,17 +20,16 @@ library(ggplot2)
 library(classInt)
 ```
 
-### Search for variables by keywords in the label 
 ```{r, eval = FALSE, echo = FALSE, include = FALSE}
+### Search for variables by keywords in the label
 v15_Profile%>%
   filter(grepl(pattern = "POVERTY", x = label))%>%
   select(name, label)
 ```
 
-\newpage
-## Extract from ACS summary file data
-
 ```{r, results='hide'}
+##\newpage
+## Extract from ACS summary file data
 sa_acs<-get_acs(geography = "tract",
                 state= "TX",
                 county = "Bexar",
@@ -36,8 +40,8 @@ sa_acs<-get_acs(geography = "tract",
 
 ```
 
-Here, I create some other variables that we may need later
 ```{r}
+#Here, I create some other variables that we may need later
 # create a county FIPS code - 5 digit and filter missing cases
 sa_acs2 <- sa_acs %>%
   mutate(county = substr(GEOID, 1, 5)) %>%
@@ -46,11 +50,10 @@ sa_acs2 <- sa_acs %>%
 
 ```
 
-## Write data out to shapefile
-You may need to create or modify some data in R and then use it in the desktop GIS (QGIS), we can write any data from R into a variety of data formats using the  `sf::st_write()` function.
-
-
 ```{r, message=FALSE, warning=FALSE, eval=FALSE, include=FALSE}
+## Write data out to shapefile
+#You may need to create or modify some data in R and then use it in the desktop GIS (QGIS), we can write any data from R into a
+#variety of data formats using the  `sf::st_write()` function.
 #change the directory for your computer
 sf::st_write(sa_acs2,
              dsn="../data/sa_tr_dp03",
@@ -59,11 +62,13 @@ sf::st_write(sa_acs2,
 
 ```
 
-\newpage
+
+```{r, message=FALSE, fig.width=12, fig.height=8}
+#\newpage
 
 ## Some basic mapping of variables
-Here I generate a quantile break for % black in census tracts and compare it to a Jenks break. *Note* in ggplot, the Jenks break is harder to do
-```{r, message=FALSE, fig.width=12, fig.height=8}
+#Here I generate a quantile break for % black in census tracts and compare it to a Jenks break. 
+#*Note* in ggplot, the Jenks break is harder to do
 
 library(patchwork)
 library(ggsn)
@@ -116,37 +121,43 @@ p1+ p2
 
 ```
 
-You can save the image from above to your computer by using `ggsave()`
+
 ```{r, eval=FALSE}
-ggsave(filename="../images/lab1map1.png",
-       dpi = "print")
+#You can save the image from above to your computer by using `ggsave()`
+#ggsave(filename="../images/lab1map1.png",
+#       dpi = "print")
 
 ```
 
+```{r}
 ### Slightly easier way using `tmap`
 
-The `tmap` package is an attractive alternative to using `ggplot()` when making maps, and makes basic cartographic principles easier.
+#The `tmap` package is an attractive alternative to using `ggplot()` when making maps, and makes basic cartographic principles easier.
 
-*Note* `style="fisher"` is equivalent to `style="jenks"` and scales better to larger data.
+#*Note* `style="fisher"` is equivalent to `style="jenks"` and scales better to larger data.
+library(tmap)
+library(tmaptools)
+```
 
-```{r}
-#library(tmap)
-#library(tmaptools)
-
-tm_shape(sa_acs2)+
+```{r, echo = F, include = T}
+a<-tm_shape(sa_acs2)+
   tm_polygons("medinc",
               title="Income",
               palette="Blues",
               style="quantile", 
               n=5, 
               legend.hist=T)+
-  tm_format("World",
-            title="San Antonio Median Household Income - Quantile Breaks",
-            legend.outside=T)+
+  tm_layout(#"World",
+            main.title="San Antonio Median Household Income - Quantile Breaks",
+            main.title.size = 1,
+            legend.outside= T)+
   tm_scale_bar()+
   tm_compass()
+a
+```
 
-tm_shape(sa_acs2)+
+```{r}
+b<-tm_shape(sa_acs2)+
   tm_polygons("medinc",
               title="Income",
               palette="Blues",
@@ -158,12 +169,12 @@ tm_shape(sa_acs2)+
             legend.outside=T)+
   tm_scale_bar()+
   tm_compass()
+
+#tmap_save(a, "C:/Users/chrys/Documents/UTSA/7093 GIS/tmap.png")
 ```
 
-
-## Interactive map with mapview
-
 ```{r}
+## Interactive map with mapview
 library(mapview)
 library(RColorBrewer)
 
@@ -182,7 +193,7 @@ x<-mapview(medinc_map2,
 
 x
 
-mapshot(x, file = "C:/Users/chrys/Documents/UTSA/7093 GIS/map.jpeg", remove_controls = c("zoomControl", "layersControl"))
+#mapshot(x, file = "C:/Users/chrys/Documents/UTSA/7093 GIS/map.jpeg", remove_controls = c("zoomControl", "layersControl"))
 
 ```
 
