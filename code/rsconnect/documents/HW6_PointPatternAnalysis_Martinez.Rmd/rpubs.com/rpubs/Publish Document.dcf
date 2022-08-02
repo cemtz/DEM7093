@@ -1,0 +1,11 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/875870/a30375eb830c4cff960f1a6be5c8d0d3
+bundleId: https://api.rpubs.com/api/v1/document/875870/a30375eb830c4cff960f1a6be5c8d0d3
+url: http://rpubs.com/cemartinez/875870
+when: 1646868660.51417
+lastSyncTime: 1646868660.51417

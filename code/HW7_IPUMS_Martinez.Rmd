@@ -1,0 +1,222 @@
+---
+title: "GIS HW 7 Using IPUMS USA for Estimation of Population Characteristics in Various Geographic Areas"
+author: "Cristina Martinez - University of Texas at San Antonio"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    #toc: yes
+    #toc_float: yes
+    #code_download: true
+---
+
+```{r setup, include=FALSE}
+options(Ncores = 12)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(ipumsr)
+ddi <- read_ipums_ddi("C:/Users/chrys/Documents/GitHub/DEM7093/data/usa_00004.xml")
+data <- read_ipums_micro(ddi)
+data<-haven::zap_labels(data) #necessary to avoid problems with "labelled" data class
+names(data)<-tolower(names(data))
+```
+
+```{r, message=FALSE, include = FALSE}
+## Load some other packages
+library(survey, quietly = T)
+library(tidyverse, quietly = T)
+library(car, quietly = T)
+library(ggplot2, quietly = T)
+library(tigris, quietly = T)
+library(classInt, quietly = T)
+library(tmap, quietly = T)
+```
+
+### Download geographic data for Public Use Microdata Areas
+```{r, results = 'hide'}
+options(tigris_class = "sf")
+pumas<-pumas(state = "CA",
+             year = 2019,
+             cb = T)
+
+plot(pumas["GEOID10"],
+     main = "Public Use Microdata Areas in California")
+```
+```{r, eval = FALSE, include = FALSE}
+#mapview::mapview(pumas, zcol= "GEOID10")
+```
+
+### Prepare variables
+Recoded 0=NA and 9=unknown as missing
+```{r}
+data$pwt <- data$perwt
+data$hwt <- data$hhwt
+data$same <- Recode(data$migrate1, recodes = "1 = 1; 2:4 = 0; else = NA")
+```
+
+### Generate survey design object
+```{r}
+des<-svydesign(ids = ~cluster,
+               strata = ~ strata,
+               weights = ~pwt,
+               data = data)
+```
+
+### perform survey estimation for PUMAs
+```{r}
+puma_est_same <- svyby(formula = ~same,
+                    by = ~puma,
+                    design = des,
+                    FUN=svymean,
+                    na.rm = TRUE )
+
+puma_est_same$same_pct = round(puma_est_same$same*100,1)
+```
+
+### join to geography
+```{r}
+pumas$puma<-as.numeric(pumas$PUMACE10)
+
+geo1<-left_join(pumas, puma_est_same, by=c("puma"= "puma"))
+```
+
+### Map estimates
+### Percent lived in same house last year by PUMA
+```{r}
+#can change tmap mode to "view" or "plot"
+tmap_mode("plot")
+
+geo1%>%
+  tm_shape()+
+  tm_polygons("same_pct",
+              title = "Percent same house \n last year",
+              palette = "Blues",
+              style= "quantile",#"kmeans",
+              n=6,
+              legend.hist = TRUE) +
+  tm_layout(legend.outside = TRUE,
+            main.title = "Percent of population that lived in the same house in the last year by California PUMAs \n 2015-2019",
+            title.position = c('center', 'top')) +
+  tm_format("World",
+            legend.position =  c("left", "top"),
+            legend.title.size = 1,
+            legend.text.size = .9,
+            main.title.size = 1)
+
+```
+
+```{r, results='hide', eval = FALSE, include = FALSE}
+# ## Estimation for metro areas
+# Here we use core based statistical areas instead of PUMAs
+
+mets<-core_based_statistical_areas(cb = T, year = 2018)
+mets<-mets[grep(mets$NAME,pattern =  "TX"),]
+plot(mets["NAME"])
+
+sts<-states(cb=T, year=2018)
+sts<-sts%>%
+  filter(GEOID==48)
+```
+
+```{r, eval = FALSE, include = FALSE}
+## estimates by metro area
+met_est_edu<-svyby(formula = ~educ_level,
+                   by = ~met2013,
+                   design=subset(des,age>25),
+                   FUN=svymean,
+                   na.rm=T )
+
+met_est_employ<-svyby(formula = ~employed,
+                      by = ~met2013,
+                      design=subset(des, age%in%18:65),
+                      FUN=svymean,
+                      na.rm=T )
+
+met_est_industry<-svyby(formula = ~proftech,
+                        by = ~met2013,
+                        design=subset(des, employed==1),
+                        FUN=svymean,
+                        na.rm=T )
+
+head(met_est_edu)
+head(met_est_employ)
+head(met_est_industry)
+
+```
+
+```{r, eval = FALSE, include = FALSE}
+mets$met2013<-as.numeric(mets$GEOID)
+geo3<-left_join(mets, met_est_employ,by=c("met2013"= "met2013"))
+
+```
+
+```{r, eval = FALSE, include = FALSE}
+#Note, grey Metros are ones that are not identified in the ACS
+tmap_mode("view")
+
+geo3%>%
+  tm_shape()+
+  tm_polygons("employed",
+              style="kmeans",
+              n=8,
+              legend.hist = TRUE) +
+ tm_layout(legend.outside = TRUE,
+            title = "Employment rate in Texas Metro Areas \n 2014-2018")  
+
+```
+
+```{r, results='hide', eval = FALSE, include = FALSE}
+## Estimation for Counties
+cos<-counties(cb= T,state = "TX", year = 2018)
+plot(cos["NAME"])
+
+sts<-states(cb=T, year=2018)
+sts<-sts%>%
+  filter(GEOID==48)
+```
+
+```{r, eval = FALSE, include = FALSE}
+## estimates by county area
+cos_est_edu<-svyby(formula = ~educ_level,
+                   by = ~countyfip,
+                   design=subset(des,age>25),
+                   FUN=svymean, na.rm=T )
+cos_est_employ<-svyby(formula = ~employed,
+                      by = ~countyfip,
+                      design=subset(des, age%in%18:65),
+                      FUN=svymean, na.rm=T )
+cos_est_industry<-svyby(formula = ~proftech,
+                        by = ~countyfip,
+                        design=subset(des, employed==1),
+                        FUN=svymean, na.rm=T )
+
+head(cos_est_edu)
+head(cos_est_employ)
+head(cos_est_industry)
+
+```
+
+```{r, eval = FALSE, include = FALSE}
+# Again, the ACS doesn't identify counties in the microdata except for those counties with small populations. 
+#The list of identified counties can be found [here](https://usa.ipums.org/usa-action/variables/COUNTYFIP#codes_section)
+cos$cofip<-as.numeric(cos$COUNTYFP)
+
+
+geo4<-left_join(cos, cos_est_employ,by=c("cofip"= "countyfip"))
+
+tmap_mode("view")
+
+geo4%>%
+  tm_shape()+
+  tm_polygons("employed",
+              style="kmeans",
+              n=8,
+              legend.hist = TRUE) +
+ tm_layout(legend.outside = TRUE,
+            title = "Employment rate in Texas Counties \n 2014-2018")  
+
+```

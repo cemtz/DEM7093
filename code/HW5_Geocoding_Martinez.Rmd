@@ -1,0 +1,72 @@
+---
+title: "Geocoding in R using Census Geocoder"
+author: "Cristina Martinez"
+date:  "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    #toc: yes
+    #toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(Ncores = 12)
+```
+
+```{r data}
+wic <- read.csv("C:/Users/chrys/Documents/GitHub/DEM7093/data/wic_west_side.csv")
+groc <- read.csv("C:/Users/chrys/Documents/GitHub/DEM7093/data/groc_west_side.csv")
+
+wic <- wic[c(6, 12:14)]
+groc <- groc[c(6, 12:14)]
+
+names(wic)<-c("street", "city", "st", "zip")
+names(groc)<-c("street", "city", "st", "zip")
+```
+
+```{r geocode}
+library(censusxy)
+
+results.wic<-cxy_geocode(wic,
+                     street = "street",
+                     city = "city",
+                     state ="st",
+                     zip = "zip",
+                     class="sf",
+                     output = "simple")
+
+results.wic$layer <- "WIC Services"
+
+results.groc<-cxy_geocode(groc,
+                     street = "street",
+                     city = "city",
+                     state ="st",
+                     zip = "zip",
+                     class="sf",
+                     output = "simple")
+
+results.groc$layer <- "Grocery Stores"
+
+results <- rbind(results.wic, results.groc)
+```
+
+### Basic interactive map of WIC Services and Grocery Stores in West Side San Antonio
+The Census geocoding service correctly geocoded:
+</br> WIC Addresses: 75.5% (77/102)
+</br> Grocery Stores: 53.4% (31/58)
+```{r}
+library(mapview)
+mapview(results, zcol = "layer", burst = TRUE)
+```
+
+```{r, eval = F, include = F}
+## Save the results if you want
+#We can write the results out to a shapefile now
+library(sf)
+
+st_write(results,dsn="~/OneDrive - University of Texas at San Antonio/classes/gis_classwork/", layer="westside_wic", driver = "ESRI Shapefile",delete_layer = T, append=T)
+
+```

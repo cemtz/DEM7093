@@ -1,0 +1,260 @@
+---
+title: "Point Pattern Analysis"
+author: "Cristina Martinez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+#    toc: yes
+#    toc_float: yes
+always_allow_html: yes
+#download_code: yes    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libs, message = FALSE, warning = FALSE}
+options(Ncores = 12)
+library(mapview)
+library(sf)
+library(censusxy)
+library(dplyr)
+library(tmap)
+```
+
+## Create point layer from data using latitude and longitude and plot points
+```{r}
+addr <- read.csv("C:/Users/chrys/Documents/GitHub/DEM7093/data/drinking_places_dt.csv")
+addr <- addr %>%
+  dplyr::select(names(addr)[c(4,6,14,23:24,41,42)])
+
+results <- st_as_sf(addr, coords=c("Longitude", "Latitude"), crs=4269, agr="constant")
+
+results.proj<-st_transform(results, crs = 2278)
+```
+
+```{r}
+mv1 <- mapview(results.proj, layer.name = "Drinking Establishments")
+#mapshot(mv1, file = paste0(getwd(), "/map1.png"))
+mv1
+```
+
+```{r tmap1, eval = FALSE, include = FALSE}
+library(tmap)
+library(tmaptools)
+library(OpenStreetMap)
+bg <- read_osm(results.proj, ext=1.1)
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(results.proj)+
+  tm_dots(col = "blue")
+
+tmap_mode("plot")
+```
+
+```{r tmap with markers, eval = FALSE, include = FALSE}
+library(ggplot2)
+library(ggmap)
+library(ggspatial)
+library(leaflet)
+leaflet() %>%
+  addTiles()%>%
+  addMarkers(lng = addr$Longitude, lat= addr$Latitude)
+
+```
+
+# Mean feature - average of bar coordinates
+Mean Center of the points is:
+c(2121292.51040046, 13701736.8982003)
+```{r}
+mean_feature<-apply(st_coordinates(results.proj), MARGIN = 2, FUN = mean)
+mean_feature<-data.frame(place="meanfeature", x=mean_feature[1], y= mean_feature[2])
+mean_feature<-st_as_sf(mean_feature, coords = c("x", "y"), crs= 2278)
+
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(results.proj, size = .2)+
+  tm_dots(col = "purple")+
+  tm_shape(mean_feature)+
+  tm_dots(col = "green", size = .2)
+```
+
+```{r median of points, eval = FALSE, include = FALSE}
+## Central feature - Median of coordinates
+median_feature<-apply(st_coordinates(results.proj),
+                      MARGIN = 2,
+                      FUN = median)
+
+median_feature<-data.frame(place="medianfeature",
+                           x=median_feature[1],
+                           y= median_feature[2])
+
+median_feature<-st_as_sf(median_feature,
+                         coords = c("x", "y"),
+                         crs= 2278)
+
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(results.proj)+
+  tm_dots(col = "green", size = .2)+
+  tm_shape(mean_feature)+
+  tm_dots(col = "red", size=.2)+
+  tm_shape(median_feature)+
+  tm_dots(col = "blue", size = .2)
+
+```
+```{r buffer points, eval = FALSE, include = FALSE}
+## Buffer points
+bar_buff<- st_buffer(results.proj, dist = 1000)
+
+#tmap_mode("plot")
+tm_basemap("OpenStreetMap.Mapnik" )+
+  tm_shape(results.proj, is.master = T)+
+  tm_dots(col = "green")+
+  tm_shape(bar_buff)+
+  tm_polygons(col = "red", alpha = .1)
+
+```
+
+## Convex hull plot 
+```{r convex hull 1}
+chull <- st_convex_hull(st_union(results))
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(results.proj)+
+  tm_dots(col = "purple")+
+  tm_shape(chull)+
+  tm_polygons(col = "grey", alpha = .5)
+```
+
+## Alternative Convex Hull Plot
+```{r convex hull 2}
+mapview(chull, layer.name = "Convex Hull")+
+  mapview(results, col.regions = "green", layer.name = "Drinking Establishments")
+```
+
+```{r kernel density, eval = FALSE, include = FALSE, message=FALSE, warning=FALSE}
+## kernel density  - 
+### You need projected data for this to work right
+
+#R can do kernel density maps, but using simple features it's kind of complicated. Here is one way to do this using the `SpatialKDE` package:
+library(SpatialKDE)
+
+grid_groc <- results.proj %>%
+  create_grid_rectangular(cell_size = 1000, side_offset = 2000)
+
+kde <- results.proj%>%
+  kde(band_width = 2000, kernel= "quartic", grid = grid_groc)
+
+tm_shape(kde)+
+  tm_polygons(col = "kde_value", palette= "viridis", title = "Density Estimate")+
+  tm_shape(results.proj)+
+  tm_dots()
+
+```
+## Spatial join 
+
+```{r, results="hide"}
+library(tidycensus)
+
+#load census tract data
+sa_acs<-get_acs(geography = "tract",
+                state = "TX",
+                county = "Bexar", 
+                year = 2019,
+                variables = "DP05_0001E",
+                geometry = T, 
+                output = "wide")
+
+#rename variables and filter missing cases
+sa_acs2<-sa_acs%>%
+  mutate(totpop= DP05_0001E)%>%
+  dplyr::select(GEOID, totpop)
+
+sa_acs2<-st_transform(sa_acs2, crs = 2278)
+sa_trol<-st_cast(sa_acs2, "MULTILINESTRING") #make outline
+```
+
+```{r}
+spjoin<-st_join(results.proj, sa_acs2)
+#head(spjoin)
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(spjoin, is.master = T)+
+  tm_dots("totpop", size = .1, title = "Population/Bar")+
+  tm_shape(sa_acs2)+
+  tm_polygons(alpha = .1)
+```
+
+## Count points in polygons 
+
+```{r}
+sa_acs2$nbar<- lengths(st_intersects(sa_acs2, results.proj))
+
+sa_acs2$bar_pc <- 1000*(sa_acs2$nbar/sa_acs2$totpop)
+
+tmap_mode("plot")
+m<-tm_basemap("OpenStreetMap.Mapnik")+
+  tm_shape(sa_acs2)+
+  tm_polygons("bar_pc", title = "Bars / 1,000 People")+
+  tm_shape(spjoin, is.master = T)+
+  tm_dots( size = .07)
+
+m
+```
+
+
+
+</br>
+
+
+
+## Alternative Density Map 
+```{r}
+mapview(sa_acs2, zcol="bar_pc", layer.name = "Bars/1000 Pop")+
+  mapview(results.proj, col.regions = "green", layer.name = "Bars")
+```
+
+## Nearest Neighbor analysis
+
+Nearest neighbor analysis to see the distributions of space between features, a measure of clustering or dispersion.
+
+```{r, message = FALSE, warning = FALSE, results = 'hide'}
+library(spatstat)
+bar.pp<-as.ppp(as(results.proj, "Spatial"))
+
+plot(nearest.neighbour(bar.pp))
+```
+
+```{r, include = FALSE}
+options(qgisprocess.path = "C://Program Files//QGIS 3.16.16//bin//qgis_process-qgis-ltr.bat" )
+```
+
+Average Nearest Neighbor (ANN) 1815/1885 = 0.963
+<br/>ANN less than 1 indicates clustering 
+</br>A z-score of -0.352 also indicates clustering and is not significant.
+
+```{r qgis, warning = FALSE, message = FALSE, results = 'hide'}
+
+library(qgisprocess)
+qgis_configure()
+
+bars_nn<-qgis_run_algorithm(alg="native:nearestneighbouranalysis",
+                            INPUT=results.proj,
+                            OUTPUT_HTML_FILE=file.path(tempdir(), "barsnn.html"),
+                            load_output = TRUE)
+```
+```{r}
+bars_nn
+```
+
+
